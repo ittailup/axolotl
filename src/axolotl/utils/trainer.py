@@ -25,6 +25,7 @@ from axolotl.utils.callbacks import (
     GPUStatsCallback,
     SaveBetterTransformerModelCallback,
     SavePeftModelCallback,
+    UploadtoS3Callback
 )
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dataloader import MultipackDistributedDataloader
@@ -571,6 +572,9 @@ def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_
 
     if hasattr(model, "use_bettertransformer") and model.use_bettertransformer is True:
         callbacks.append(SaveBetterTransformerModelCallback)
+
+    if cfg.remote_output_dir:
+        callbacks.append(UploadtoS3Callback(cfg))
 
     data_collator_kwargs = {
         "padding": True,

@@ -94,3 +94,45 @@ class GPUStatsCallback(
             log_gpu_memory_usage(LOG, "while training", self.cfg.device)
             self.logged = True
         return control
+
+class UploadToS3Callback(TrainerCallback):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.s3_client = boto3.client('s3')
+
+    def on_save(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        if self.should_save_checkpoint(args, state):
+            self.upload_checkpoint(args.output_dir, state.global_step)
+        return control
+
+    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        if self.should_save_checkpoint(args, state):
+            self.upload_checkpoint(args.output_dir, state.global_step)
+        return control
+
+    def upload_checkpoint(self, output_dir, global_step):
+        checkpoint_folder = os.path.join(output_dir, f"{PREFIX_CHECKPOINT_DIR}-{global_step}")
+        s3_url = self.cfg.remote_output_dir
+        bucket_name, prefix = self.parse_s3_url(s3_url)
+
+        for root, _, files in os.walk(checkpoint_folder):
+            for file in files:
+                local_path = os.path.join(root, file)
+                s3_key = os.path.join(prefix, os.path.relpath(local_path, output_dir))
+                self.s3_client.upload_file(local_path, bucket_name, s3_key)
+
+    @staticmethod
+    def parse_s3_url(s3_url):
+        assert s3_url.startswith("s3://")
+        s3_url = s3_url[len("s3://"):]
+        bucket_name, prefix = s3_url.split("/", 1)
+        return bucket_name, prefix
+
+    @staticmethod
+    def should_save_checkpoint(args: TrainingArguments, state: TrainerState) -> bool:
+        return (
+            args.save_strategy == IntervalStrategy.STEPS
+            and args.save_steps > 0
+            and state.global_step % args.save_steps == 0
+        )
+
